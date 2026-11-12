@@ -57,6 +57,7 @@ public class Vehicule extends Thread{
             pont.entrer(this);
             boolean sorti = false;
             while (!sorti) {
+            	Thread.sleep(1000);
                 sorti = pont.avancer(this);
             }
         } catch (InterruptedException e) {

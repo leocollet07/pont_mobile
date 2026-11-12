@@ -1,6 +1,7 @@
 package pont_mobile;
 
 import java.util.LinkedList;
+import java.util.Timer;
 
 public class Pont {
     private Etat etat = Etat.FERME;
@@ -13,9 +14,12 @@ public class Pont {
     private String[][] urgence = new String[2][N];
     
 	private long delaiOuverture;
+	private long prochaineOuverture = 0;  
+	private Timer timer = new Timer(true);
+	
 	private int nbConvois;
     
-    public Pont(int delaiOuverture) {
+    public Pont(long delaiOuverture) {
         this.delaiOuverture = delaiOuverture;
         System.out.print("\033[2J"); 
     }
@@ -121,7 +125,7 @@ public class Pont {
     }
     
     public synchronized void tenterOuverture() {
-        if (etat == Etat.FERME && !ouvertureDemandee) {
+    	if (etat == Etat.FERME && !ouvertureDemandee && !file.isEmpty() && System.currentTimeMillis() >= prochaineOuverture) {
             ouvertureDemandee = true; 
             new CycleOuverture(this).start();
             notifyAll();
@@ -138,9 +142,8 @@ public class Pont {
     public synchronized void fermetureTerminee() {
         changerEtat(Etat.FERME);
         ouvertureDemandee = false;
-        if (!file.isEmpty()) {         
-            tenterOuverture();
-        }
+        prochaineOuverture = System.currentTimeMillis() + delaiOuverture;
+        timer.schedule(new TacheOuverture(this), delaiOuverture + 100);
         notifyAll();
     }
     

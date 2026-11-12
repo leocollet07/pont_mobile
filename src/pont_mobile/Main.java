@@ -5,7 +5,10 @@ import java.util.Random;
 
 public class Main {
     public static void main(String[] args) throws InterruptedException {
-        Pont pont = new Pont(0);
+        long delai = 60000;
+        if (args.length > 0) delai = Long.parseLong(args[0]) * 1000;
+
+        Pont pont = new Pont(delai);
         Random r = new Random();
         ArrayList<Thread> threads = new ArrayList<>();
 
@@ -17,10 +20,14 @@ public class Main {
         for (int i = 1; i <= 3; i++)
             threads.add(new Bateau(pont, "B" + i, r.nextInt(2), 3000 + r.nextInt(5000)));
         for (int i = 4; i <= 5; i++)
-            threads.add(new Bateau(pont, "B" + i, r.nextInt(2), 10000 + r.nextInt(5000)));
+            threads.add(new Bateau(pont, "B" + i, r.nextInt(2), 20000 + r.nextInt(5000)));
 
-        for (Thread t : threads) t.start();
-        for (Thread t : threads) t.join();
+        for (Thread t : threads) {
+        	t.start();
+        }
+        for (Thread t : threads) {
+        	t.join();
+        }
         pont.attendreFermeture();
         System.out.println("=== Simulation terminee ===");
         System.exit(0);
