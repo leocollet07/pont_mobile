@@ -4,7 +4,7 @@ public class Vehicule extends Thread{
     public static final int GAUCHE_DROITE = 0;
     public static final int DROITE_GAUCHE = 1;
     
-	private Pont pont; 
+	protected Pont pont; 
 	private String nom;
 	private int sens; 
 	private int longueur; 

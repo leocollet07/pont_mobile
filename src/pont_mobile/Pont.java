@@ -18,6 +18,7 @@ public class Pont {
 	private Timer timer = new Timer(true);
 	
 	private int nbConvois;
+	private int prioritaires = 0;
     
     public Pont(long delaiOuverture) {
         this.delaiOuverture = delaiOuverture;
@@ -40,7 +41,11 @@ public class Pont {
         int L = v.getLongueur();
         int d = v.getDebut();
         boolean sortie = (d + L - 1 == N - 1); 
-
+        
+        while (prioritaires > 0 || (!sortie && segments[s][d + L] != null)) {
+            wait();
+        }
+        
         if (sortie) {
             for (int i = d; i < d + L; i++) segments[s][i] = null;
             if (v.estConvoi()) {
@@ -99,6 +104,9 @@ public class Pont {
         if (!libre(s, 0, v.getLongueur())) {
         	return false; 
         }
+        if (prioritaires > 0) {
+            return false;
+        }
         if (v.estConvoi() && !voieVide(1 - s)) {
         	return false;
         }
@@ -133,7 +141,7 @@ public class Pont {
     }
     
     public synchronized void attendrePontVide() throws InterruptedException {
-        while (!pontVide()) {
+        while (!pontVide() || prioritaires > 0) {
         	wait();
         }
         changerEtat(Etat.OUVERTURE);
@@ -151,6 +159,38 @@ public class Pont {
         while (etat != Etat.FERME || ouvertureDemandee) {
         	wait();
         }
+    }
+    
+    //PRIORITAIRE 
+    
+    public synchronized void arriveePrioritaire(Vehicule v) {
+        prioritaires++;
+        notifyAll();
+    }
+
+    public synchronized void entrerPrioritaire(Vehicule v) throws InterruptedException {
+        while (etat != Etat.FERME) {
+            wait();
+        }
+    }
+
+    public synchronized void positionPrioritaire(Vehicule v, int i) {
+        int s = v.getSens();
+        if (i > 0 && v.getNom().equals(urgence[s][i - 1])) {
+            urgence[s][i - 1] = null;
+        }
+        urgence[s][i] = v.getNom();
+        afficher();
+    }
+
+    public synchronized void sortiePrioritaire(Vehicule v) {
+        int s = v.getSens();
+        if (v.getNom().equals(urgence[s][N - 1])) {
+            urgence[s][N - 1] = null;
+        }
+        prioritaires--;
+        afficher();
+        notifyAll();
     }
     
     //BATEAU 
@@ -192,6 +232,9 @@ public class Pont {
             String nom = segments[sens][i];
             if (nom == null) {
             	sb.append("[  ]");
+            }
+            else if (prioritaires > 0) {
+                sb.append("(" + String.format("%-2s", nom) + ")");
             }
             else {
             	sb.append("[" + String.format("%-2s", nom) + "]");
