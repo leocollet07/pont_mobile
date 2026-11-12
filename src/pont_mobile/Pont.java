@@ -1,47 +1,197 @@
 package pont_mobile;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 
 public class Pont {
     private Etat etat = Etat.FERME;
-    private int surlePont = 0;
     private int nbBateauAttente; 
     private boolean bateauQuiPasse = false;
-    private boolean cycleOuverture = false; 
+    private boolean ouvertureDemandee = false;
     private final int[] voie = new int[2];
+    private int convoiSens = -1;
+    public static final int N = 8;  //Segment
+    private String[][] segments = new String[2][N];
+    private String[][] urgence = new String[2][N];
     
-    synchronized void changerEtat(Etat nouveau) {
+	private long delaiOuverture;
+	private int nbConvois;
+    
+    public Pont(int delaiOuverture) {
+        this.delaiOuverture = delaiOuverture;
+        System.out.print("\033[2J"); 
+    }
+    
+    
+    
+    public synchronized void changerEtat(Etat nouveau) {
     	if(nouveau != etat.suivant()) {
     		throw new IllegalStateException("Transition interdite " + etat + " -> " + nouveau);
     	}
     	etat = nouveau;
+    	notifyAll();
     }
     
-    synchronized void attendreVidange() throws InterruptedException {
-        while (!(cycleOuverture && voie[0] + voie[1] == 0)) wait();
+    public synchronized boolean avancer(Vehicule v) throws InterruptedException {
+        int s = v.getSens();
+        int L = v.getLongueur();
+        int d = v.getDebut();
+        boolean sortie = (d + L - 1 == N - 1); 
+
+        if (sortie) {
+            for (int i = d; i < d + L; i++) segments[s][i] = null;
+            if (v.estConvoi()) {
+                nbConvois--;
+                if (nbConvois == 0) {
+                	convoiSens = -1; 
+                }
+            }
+            notifyAll();
+            return true;
+        }
+        
+        while (segments[s][d + L] != null) {
+            wait();
+        }
+        
+        segments[s][d + L] = v.getNom(); 
+        segments[s][d] = null;         
+        v.setDebut(d + 1);
+        afficher();
+        notifyAll();
+        return false;
+    }
+   
+    public synchronized void entrer(Vehicule v) throws InterruptedException {
+        int s = v.getSens();
+        if (v.estConvoi()) {
+            while (convoiSens != -1 && convoiSens != s) {
+            	wait();
+            }
+            convoiSens = s;
+            nbConvois++;   
+        }
+        while (!peutEntrer(v)) {
+        	wait();
+        }
+        for (int i = 0; i < v.getLongueur(); i++) {
+            segments[s][i] = v.getNom();
+        }
+        v.setDebut(0);
     }
     
-    synchronized void autoriserOuvertureSiPossible() {
-        if (etat == etat.FERME && !cycleOuverture && !(nbBateauAttente == 0)) {
-            cycleOuverture = true;
+    private boolean peutEntrer(Vehicule v) {
+        int s = v.getSens();
+        if (etat != Etat.FERME) {
+        	return false;           
+        }
+        if (ouvertureDemandee) {
+        	return false;          
+        }
+        if (convoiSens == 1 - s) {
+        	return false;           
+        }
+        if (!libre(s, 0, v.getLongueur())) {
+        	return false; 
+        }
+        if (v.estConvoi() && !voieVide(1 - s)) {
+        	return false;
+        }
+        return true;
+    }
+    
+
+    
+    private boolean libre(int sens, int debut, int nb) {
+        for (int i = debut; i < debut + nb; i++) {
+            if (segments[sens][i] != null) {
+            	return false;
+            }
+        }
+        return true;
+    }
+    
+    private boolean voieVide(int sens) { 
+    	return libre(sens, 0, N); 
+    }
+    
+    private boolean pontVide() { 
+    	return voieVide(0) && voieVide(1); 
+    }
+    
+    public synchronized void tenterOuverture() {
+        if (etat == Etat.FERME && !ouvertureDemandee) {
+            ouvertureDemandee = true; 
+            new CycleOuverture(this).start();
+            notifyAll();
         }
     }
     
-    private boolean admissible(Vehicule v) {
-    	if (etat != Etat.FERME || cycleOuverture) {
-    		return false; 
-    	}
-    return true; 
+    public synchronized void attendrePontVide() throws InterruptedException {
+        while (!pontVide()) {
+        	wait();
+        }
+        changerEtat(Etat.OUVERTURE);
+    }
+
+    public synchronized void fermetureTerminee() {
+        etat = Etat.FERME;
+        ouvertureDemandee = false;
+        notifyAll();
     }
     
-    private void verifier() {
-    	if (etat != Etat.FERME && !(surlePont == 0)) {
-    		throw new IllegalStateException("Vehicules sur le pont alors que l'etat est " + etat);
-    	}
-    	if (bateauQuiPasse == true && etat != Etat.OUVERT)
-            throw new IllegalStateException("Bateau en transit alors que le pont n'est pas ouvert");
+    public synchronized void attendreFermeture() throws InterruptedException {
+        while (etat != Etat.FERME || ouvertureDemandee) {
+        	wait();
+        }
     }
+    
+    //AFFICHAGE 
+    
+    private String ligne(String s) { 
+    	return s + "\033[K\n"; 
+    }
+    
+    private String dessinerVoie(int sens) {
+        StringBuilder sb = new StringBuilder("|");
+        for (int i = 0; i < N; i++) {
+            String nom = segments[sens][i];
+            if (nom == null) {
+            	sb.append("[  ]");
+            }
+            else {
+            	sb.append("[" + String.format("%-2s", nom) + "]");
+            }
+        }
+        return sb.append("|").toString();
+    }
+
+    private String dessinerUrgence(int sens) {
+        StringBuilder sb = new StringBuilder("|");
+        for (int i = 0; i < N; i++) {
+            String nom = urgence[sens][i];
+            if (nom == null) {
+                sb.append(" .. ");
+            } else {
+                sb.append("<" + nom + ">");
+            }
+        }
+        return sb.append("|").toString();
+    }
+    
+    private void afficher() {
+        StringBuilder sb = new StringBuilder("\033[H");
+        sb.append(ligne("===== PONT MOBILE =====   Etat : " + etat));
+        sb.append(ligne("Voie G->D    : " + dessinerVoie(0)));
+        sb.append(ligne("Urgence G->D : " + dessinerUrgence(0)));
+        sb.append(ligne("Voie D->G    : " + dessinerVoie(1)));
+        sb.append(ligne("Urgence D->G : " + dessinerUrgence(1)));
+        sb.append(ligne(""));
+        sb.append(ligne("Convoi : " + (convoiSens == -1 ? "-" : (convoiSens == 0 ? "G->D" : "D->G"))));
+        sb.append(ligne(""));
+    }
+    
 }
 
 
