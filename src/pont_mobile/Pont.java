@@ -1,15 +1,12 @@
 package pont_mobile;
 
-import java.text.Normalizer;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedList;
 
 public class Pont {
     private Etat etat = Etat.FERME;
-    private int nbBateauAttente; 
-    private boolean bateauQuiPasse = false;
+    private LinkedList<Bateau> file = new LinkedList<>();
+    private Bateau bateauQuiPasse = null;
     private boolean ouvertureDemandee = false;
-    private final int[] voie = new int[2];
     private int convoiSens = -1;
     public static final int N = 8;  //Segment
     private String[][] segments = new String[2][N];
@@ -30,6 +27,7 @@ public class Pont {
     		throw new IllegalStateException("Transition interdite " + etat + " -> " + nouveau);
     	}
     	etat = nouveau;
+    	afficher();
     	notifyAll();
     }
     
@@ -47,6 +45,7 @@ public class Pont {
                 	convoiSens = -1; 
                 }
             }
+            afficher();
             notifyAll();
             return true;
         }
@@ -70,7 +69,7 @@ public class Pont {
             	wait();
             }
             convoiSens = s;
-            nbConvois++;   
+            nbConvois++; 
         }
         while (!peutEntrer(v)) {
         	wait();
@@ -78,6 +77,7 @@ public class Pont {
         for (int i = 0; i < v.getLongueur(); i++) {
             segments[s][i] = v.getNom();
         }
+        afficher();
         v.setDebut(0);
     }
     
@@ -136,14 +136,44 @@ public class Pont {
     }
 
     public synchronized void fermetureTerminee() {
-        etat = Etat.FERME;
+        changerEtat(Etat.FERME);
         ouvertureDemandee = false;
+        if (!file.isEmpty()) {         
+            tenterOuverture();
+        }
         notifyAll();
     }
     
     public synchronized void attendreFermeture() throws InterruptedException {
         while (etat != Etat.FERME || ouvertureDemandee) {
         	wait();
+        }
+    }
+    
+    //BATEAU 
+    
+    public synchronized void enregistrerBateau(Bateau b) {
+        file.add(b);
+        tenterOuverture();
+        afficher();
+    }
+
+    public synchronized void attendrePassage(Bateau b) throws InterruptedException {
+        while (!(etat == Etat.OUVERT && file.getFirst() == b)) wait();
+        bateauQuiPasse = b;
+        afficher();
+    }
+
+    public synchronized void finPassage(Bateau b) {
+        file.removeFirst();
+        bateauQuiPasse = null;
+        afficher();
+        notifyAll();
+    }
+    
+    public synchronized void attendreFileVide() throws InterruptedException {
+        while (!file.isEmpty()) {
+            wait();
         }
     }
     
@@ -190,6 +220,18 @@ public class Pont {
         sb.append(ligne(""));
         sb.append(ligne("Convoi : " + (convoiSens == -1 ? "-" : (convoiSens == 0 ? "G->D" : "D->G"))));
         sb.append(ligne(""));
+        String bateau = "-";
+        if (bateauQuiPasse != null) {
+            bateau = bateauQuiPasse.getNom() + " " + bateauQuiPasse.sensTexte();
+        }
+        sb.append(ligne("Bateau sous le pont : " + bateau));
+        StringBuilder f = new StringBuilder();
+        for (Bateau b : file) {
+            if (b != bateauQuiPasse) f.append(b.getNom() + "(" + b.sensTexte() + ") ");
+        }
+        sb.append(ligne("File d'attente FIFO : " + f));
+        sb.append(ligne(""));
+        System.out.print(sb);
     }
     
 }
